@@ -1,0 +1,82 @@
+- 
+  name: 'Simple web app'
+  hosts: target3
+  tasks:
+    - name: 'Install dependencies'
+      apt:
+        name: '{{ item }}'
+        state: present
+      with_items:
+        - python
+        - python-setuptools
+        - python-dev
+        - build-essential
+
+    - name: 'Install and configure database'
+      apt:
+        name: '{{ item }}'
+        state: present
+      with_items:
+        - mysql-server
+        - mysql-client
+    
+    - name: 'Start mysql service'
+      service:
+        name: mysql
+        state: started
+
+    - name: 'Install mysql dependencies'
+      pip:
+        name: '{{ item }}'
+      with_items:
+        - pymysql
+        - cryptography
+
+    - name: 'Create database'
+      mysql_db:
+        name: employee_db
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        state: present
+    
+    - name: 'Create user'
+      mysql_user:
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+        name: db_user
+        password: password
+        host: localhost
+        priv: '*.*:ALL,GRANT'
+        state: present
+
+    - name: 'Copy sql script to host'
+      copy:
+        src: startup.sql
+        dest: /home/ubuntu
+
+    - name: 'Load startup script'
+      shell: mysql < /home/ubuntu/startup.sql
+      ignore_errors: yes
+
+    - name: 'Install web server'
+      pip:
+        name: '{{ item }}'
+      with_items:
+        - flask
+        - flask-mysql
+        - gunicorn
+
+    - name: 'Copy python app'
+      copy:
+        src: app.py
+        dest: /home/ubuntu
+
+    # - name: 'Deploy webapp'
+    #   vars:
+    #     flask_env:
+    #       FLASK_APP: /home/ubuntu/app.py
+    #   command: flask run --host=0.0.0.0
+    #   environment: '{{ flask_env }}'
+
+    - name: 'Deploy webapp'
+      command: gunicorn --bind 0.0.0.0:5000 app:app --daemon
+      args:
+        chdir: /home/ubuntu
